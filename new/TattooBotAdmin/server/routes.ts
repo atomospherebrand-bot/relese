@@ -42,6 +42,13 @@ function formatDate(date: string) {
   return `${day}.${month}.${year}`;
 }
 
+const dayConfigSchema = z.object({
+  isWorking: z.boolean(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  note: z.string().optional().nullable(),
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const api = Router();
   const storage = getStorage();
@@ -60,6 +67,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     asyncHandler(async (_req, res) => {
       const masters = await storage.listMasters();
       res.json({ masters });
+    }),
+  );
+
+  api.get(
+    "/masters/:id/availability",
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const { ym } = z.object({ ym: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(req.query);
+      const days = await storage.getMasterAvailability(id, ym);
+      res.json({ days });
+    }),
+  );
+
+  api.post(
+    "/masters/:id/availability",
+    asyncHandler(async (req, res) => {
+      const { id } = req.params;
+      const payload = z
+        .object({
+          ym: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+          update: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), dayConfigSchema),
+        })
+        .parse(req.body ?? {});
+      const days = await storage.updateMasterAvailability(id, payload.update, payload.ym);
+      res.json({ days });
     }),
   );
 

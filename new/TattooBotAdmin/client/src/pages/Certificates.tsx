@@ -149,7 +149,7 @@ type CertificateDialogProps = {
 function CertificateDialog({ onClose, onCreated }: CertificateDialogProps) {
   const { toast } = useToast();
   const createMutation = useMutation({
-    mutationFn: api.createCertificate,
+    mutationFn: (payload: Parameters<typeof api.createCertificate>[0]) => api.createCertificate(payload),
     onSuccess: () => {
       toast({ title: "Готово", description: "Сертификат добавлен" });
       setFile(null);

@@ -43,8 +43,12 @@ export default function SchedulePage() {
   }, []);
 
   React.useEffect(() => {
+    setMap({});
+    setErr(null);
     if (!selectedMaster) return;
-    jget<{days: Record<string, DayCfg>}>(`/masters/${selectedMaster}/availability?ym=${ym}`).then(d => setMap(d.days || {})).catch(e => setErr(String(e)));
+    jget<{days: Record<string, DayCfg>}>(`/masters/${selectedMaster}/availability?ym=${ym}`)
+      .then((d) => setMap(d.days || {}))
+      .catch((e) => setErr(String(e)));
   }, [selectedMaster, ym]);
 
   const days: (Date | null)[] = React.useMemo(() => {
@@ -60,24 +64,43 @@ export default function SchedulePage() {
     return arr;
   }, [month]);
 
+  const applyUpdate = React.useCallback(
+    (updates: Record<string, DayCfg>) => {
+      setMap((prev) => ({ ...prev, ...updates }));
+      if (!selectedMaster) return;
+      setErr(null);
+      jpost<{ days: Record<string, DayCfg> }>(`/masters/${selectedMaster}/availability`, { update: updates, ym })
+        .then((response) => {
+          if (response?.days) {
+            setMap(response.days);
+          }
+        })
+        .catch((e) => setErr(String(e)));
+    },
+    [selectedMaster, ym],
+  );
+
   const toggleDay = (d: Date) => {
     const k = dayKey(d);
     const cur = map[k] || { isWorking: false };
     const next = { ...cur, isWorking: !cur.isWorking, start: cur.start || defStart, end: cur.end || defEnd };
-    setMap(prev => ({ ...prev, [k]: next }));
-    jpost(`/masters/${selectedMaster}/availability`, { update: { [k]: next } }).catch(()=>{});
+    applyUpdate({ [k]: next });
   };
 
   const setDayHours = (d: Date, start: string, end: string) => {
     const k = dayKey(d);
     const cur = map[k] || { isWorking: true };
     const next = { ...cur, isWorking: true, start, end };
-    setMap(prev => ({ ...prev, [k]: next }));
-    jpost(`/masters/${selectedMaster}/availability`, { update: { [k]: next } }).catch(()=>{});
+    applyUpdate({ [k]: next });
   };
 
   return (
     <div className="p-6 space-y-4">
+      {err && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {err}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">График работы мастеров</h1>
         <div className="flex gap-3 items-center">

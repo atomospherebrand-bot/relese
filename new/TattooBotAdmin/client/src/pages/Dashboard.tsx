@@ -1,7 +1,7 @@
 import React from "react";
 import { StatsCard } from "@/components/StatsCard";
 import { RecentBookings } from "@/components/RecentBookings";
-import { Calendar, Users, DollarSign, Clock, BadgeCheck, Image as ImageIcon } from "lucide-react";
+import { Calendar, Users, DollarSign, Clock, UserPlus, Image as ImageIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,7 +67,6 @@ export default function Dashboard() {
     cancelledWeek,
     newClientsWeek,
     returningClientsWeek,
-    certificatesCount,
     portfolioCount,
     clientsTotal,
   } = dashboardQuery.data.stats;
@@ -102,10 +101,10 @@ export default function Dashboard() {
           description={`Отменено за 7 дней: ${cancelledWeek}`}
         />
         <StatsCard
-          title="Активные сертификаты"
-          value={certificatesCount}
-          icon={BadgeCheck}
-          description="Готовы к выдаче в боте"
+          title="Новые клиенты"
+          value={`+${newClientsWeek}`}
+          icon={UserPlus}
+          description="За последние 7 дней"
         />
         <StatsCard
           title="Работы в портфолио"

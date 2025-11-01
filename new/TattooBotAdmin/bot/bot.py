@@ -85,6 +85,41 @@ def bot_image(key: str) -> str:
     val = (msgs.get(key) or {}).get("imageUrl") if msgs else None
     return val or ""
 
+
+def apply_placeholders(text: str, replacements: dict[str, str]) -> str:
+    if not replacements:
+        return text
+    result = text
+    for key, value in replacements.items():
+        result = result.replace(f"{{{key}}}", value or "")
+    return result
+
+
+def render_bot_text(key: str, default: str, replacements: dict[str, str] | None = None) -> str:
+    raw = bot_text(key, default)
+    if not raw:
+        return ""
+    return apply_placeholders(raw, replacements or {})
+
+
+def format_payment_methods(raw: str | None) -> str:
+    if not raw:
+        return (
+            "• Наличные в студии\n"
+            "• СБП (по номеру телефона)\n"
+            "• Банковские карты\n"
+            "• Криптовалюта (по запросу)"
+        )
+    tokens = [token.strip() for token in re.split(r"[,\n;]+", str(raw)) if token.strip()]
+    if not tokens:
+        return (
+            "• Наличные в студии\n"
+            "• СБП (по номеру телефона)\n"
+            "• Банковские карты\n"
+            "• Криптовалюта (по запросу)"
+        )
+    return "\n".join(f"• {token}" for token in tokens)
+
 RU_DOW = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 
@@ -664,6 +699,7 @@ def btn(update, ctx: CallbackContext):
 
     if data == "route":
         s = safe_get_settings()
+        studio = s.get("studioName") or "Тату-студия"
         address = s.get("address", "Адрес не указан")
 
         lat = s.get("lat") or s.get("latitude")
@@ -674,26 +710,28 @@ def btn(update, ctx: CallbackContext):
                 lat = lat.strip()
             if isinstance(lon, str):
                 lon = lon.strip()
-        except:
-            pass
+        except Exception as e:
+            log.debug("lat/lon strip failed: %s", e)
 
-        parts = [f"📍 *Адрес:* {address}"]
+        links = []
+        yandex_direct = s.get("yandexMapUrl")
+        if yandex_direct:
+            links.append(f"[Открыть в Яндекс.Картах]({yandex_direct})")
 
         if lat and lon:
             yan_link = f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
             goo_link = f"https://maps.google.com/?q={lat},{lon}"
-            parts.append(f"[Открыть в Яндекс.Картах]({yan_link})")
-            parts.append(f"[Открыть в Google Maps]({goo_link})")
+            if not yandex_direct:
+                links.append(f"[Открыть в Яндекс.Картах]({yan_link})")
+            links.append(f"[Открыть в Google Maps]({goo_link})")
 
             static_candidates = [
                 f"https://static-maps.yandex.ru/1.x/?ll={lon},{lat}&z=16&l=map&size=650,300&pt={lon},{lat},pm2blm&lang=ru_RU",
                 f"https://staticmap.openstreetmap.de/staticmap.php?center={lat},{lon}&zoom=16&size=650x300&markers={lat},{lon}",
             ]
-            sent_any = False
             for url in static_candidates:
                 try:
                     safe_send_photo(q.message.bot, q.message.chat_id, url)
-                    sent_any = True
                     break
                 except Exception as e:
                     log.debug("static map try failed: %s", e)
@@ -704,16 +742,36 @@ def btn(update, ctx: CallbackContext):
                     latitude=float(lat),
                     longitude=float(lon),
                 )
-                sent_any = True
             except Exception as e:
                 log.debug("send_location failed: %s", e)
 
-        q.message.bot.send_message(
-            chat_id=q.message.chat_id,
-            text="\n".join(parts),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=kb_back_home(),
+        route_text = render_bot_text(
+            "route",
+            "📍 *{studio}*\n{address}\n\n{links}\n\nНапиши, если нужна помощь с маршрутом.",
+            {
+                "studio": studio,
+                "address": address,
+                "links": "\n".join(links),
+            },
         )
+        kb = kb_back_home()
+        cover = bot_image("route")
+        if cover:
+            safe_send_photo(
+                q.message.bot,
+                q.message.chat_id,
+                build_full_url(cover),
+                caption=route_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb,
+            )
+        else:
+            q.message.bot.send_message(
+                chat_id=q.message.chat_id,
+                text=route_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb,
+            )
         return
 
     if data == "about":
@@ -757,7 +815,19 @@ def btn(update, ctx: CallbackContext):
                     parse_mode=ParseMode.MARKDOWN_V2,
                     reply_markup=kb
                 )
-        q.message.reply_text("Это наши мастера 👆", reply_markup=kb_back_home())
+        about_text = render_bot_text("about", "Это наши мастера 👆", {"studio": s.get("studioName") or "Студия"})
+        about_cover = bot_image("about")
+        if about_cover:
+            safe_send_photo(
+                q.message.bot,
+                q.message.chat_id,
+                build_full_url(about_cover),
+                caption=about_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_back_home(),
+            )
+        else:
+            q.message.reply_text(about_text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
         return
 
     if data.startswith("portfolio:"):
@@ -838,7 +908,6 @@ def btn(update, ctx: CallbackContext):
         s = safe_get_settings()
         links = [x.strip() for x in (s.get("certificates") or "").split(",") if x.strip()]
         if links:
-            # попытаемся скачать и отправить безопасно
             media_items = []
             for u in links[:10]:
                 try:
@@ -851,7 +920,6 @@ def btn(update, ctx: CallbackContext):
                 except Exception as e:
                     log.debug("cert download failed: %s", e)
             if media_items:
-                # используем safe_send_media_group or fallback to send_media_group with InputMediaPhoto
                 group = []
                 for m in media_items:
                     m_buf = m.get("buf")
@@ -861,17 +929,36 @@ def btn(update, ctx: CallbackContext):
                     q.message.bot.send_media_group(chat_id=q.message.chat_id, media=group)
                 except Exception as e:
                     log.debug("certs media group failed: %s", e)
-                    # fallback to individual
                     for g in group:
                         try:
                             q.message.bot.send_photo(chat_id=q.message.chat_id, photo=g.media)
                         except Exception as ie:
                             log.warning(f"cert individual failed: {ie}")
-            q.message.reply_text("Сертификаты", reply_markup=kb_back_home())
+            certs_text = render_bot_text(
+                "certs",
+                "🎁 Наши подарочные сертификаты. Выбирай и дари впечатления.",
+                {"studio": s.get("studioName") or "Студия"},
+            )
+            certs_cover = bot_image("certs")
+            if certs_cover:
+                safe_send_photo(
+                    q.message.bot,
+                    q.message.chat_id,
+                    build_full_url(certs_cover),
+                    caption=certs_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb_back_home(),
+                )
+            else:
+                q.message.reply_text(certs_text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
         else:
-            # For no links, use delete + send if necessary, but since it's edit, check if original is text
+            empty_text = render_bot_text(
+                "certs_empty",
+                "Сертификаты пока не загружены.",
+                {"studio": s.get("studioName") or "Студия"},
+            )
             try:
-                q.edit_message_text("Сертификаты пока не загружены.", reply_markup=kb_back_home())
+                q.edit_message_text(empty_text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
             except Exception as e:
                 if "no text in the message to edit" in str(e):
                     try:
@@ -880,8 +967,9 @@ def btn(update, ctx: CallbackContext):
                         pass
                     q.message.bot.send_message(
                         chat_id=q.message.chat_id,
-                        text="Сертификаты пока не загружены.",
-                        reply_markup=kb_back_home()
+                        text=empty_text,
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=kb_back_home(),
                     )
                 else:
                     raise
@@ -889,30 +977,46 @@ def btn(update, ctx: CallbackContext):
 
     if data=="pay":
         s = safe_get_settings()
-        pay = s.get("paymentInfo") or (
-            "💳 *Оплата*\n\n"
-            "• Наличные в студии\n"
-            "• СБП (по номеру телефона)\n"
-            "• Банковские карты\n"
-            "• Криптовалюта (по запросу)\n\n"
-            "_Депозит фиксирует слот и вычитается из стоимости сеанса._"
+        methods = format_payment_methods(s.get("paymentInfo") or s.get("paymentMethods"))
+        pay = render_bot_text(
+            "pay",
+            "💳 *Оплата*
+
+{methods}
+
+_Депозит фиксирует слот и вычитается из стоимости сеанса._",
+            {
+                "methods": methods,
+                "studio": s.get("studioName") or "Студия",
+            },
         )
-        try:
-            q.edit_message_text(pay, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
-        except Exception as e:
-            if "no text in the message to edit" in str(e):
-                try:
-                    q.message.delete()
-                except:
-                    pass
-                q.message.bot.send_message(
-                    chat_id=q.message.chat_id,
-                    text=pay,
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=kb_back_home()
-                )
-            else:
-                raise
+        cover = bot_image("pay")
+        if cover:
+            safe_send_photo(
+                q.message.bot,
+                q.message.chat_id,
+                build_full_url(cover),
+                caption=pay,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=kb_back_home(),
+            )
+        else:
+            try:
+                q.edit_message_text(pay, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
+            except Exception as e:
+                if "no text in the message to edit" in str(e):
+                    try:
+                        q.message.delete()
+                    except:
+                        pass
+                    q.message.bot.send_message(
+                        chat_id=q.message.chat_id,
+                        text=pay,
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=kb_back_home(),
+                    )
+                else:
+                    raise
         return
 
 def cmd_ping(u, c): u.message.reply_text("pong")

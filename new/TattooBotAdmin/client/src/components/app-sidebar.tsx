@@ -11,7 +11,10 @@ import {
   Settings,
   Users,
   BadgeCheck,
+  LogOut,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Button } from "@/components/ui/button";
 
 export const menuItems = [
   { title: "Главная", url: "/", icon: Home },
@@ -30,10 +33,11 @@ export const menuItems = [
 type AppSidebarProps = {
   className?: string;
   onNavigate?: () => void;
+  onLogout?: () => void;
   variant?: "desktop" | "mobile";
 };
 
-export default function AppSidebar({ className, onNavigate, variant = "desktop" }: AppSidebarProps) {
+export default function AppSidebar({ className, onNavigate, onLogout, variant = "desktop" }: AppSidebarProps) {
   const [pathname] = useLocation();
 
   return (
@@ -70,9 +74,23 @@ export default function AppSidebar({ className, onNavigate, variant = "desktop" 
           );
         })}
       </nav>
-      <div className="px-5 pb-5 text-xs text-white/40">
-        <p>Версия панели 2.0</p>
-        <p className="mt-1">Обновлено для нового UI</p>
+      <div className="px-5 pb-5">
+        <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+          <span>Тема</span>
+          <ThemeToggle />
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onLogout}
+          className="mt-3 w-full justify-center border-white/20 text-white/80 hover:bg-white/10"
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Выйти
+        </Button>
+        <p className="mt-4 text-xs text-white/40">Версия панели 2.0</p>
+        <p className="text-xs text-white/40">Обновлено для нового UI</p>
       </div>
     </aside>
   );

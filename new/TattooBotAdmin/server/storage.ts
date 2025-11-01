@@ -57,6 +57,59 @@ function optional<T>(value: T | null): T | undefined {
 const DATA_DIR = path.join(process.cwd(), "data");
 const CERTS_FILE = path.join(DATA_DIR, "certs.json");
 const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
+const AVAILABILITY_FILE = path.join(DATA_DIR, "availability.json");
+
+type DaySchedule = {
+  isWorking: boolean;
+  start?: string;
+  end?: string;
+  note?: string | null;
+};
+
+const DAY_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_KEY_REGEX = /^\d{4}-\d{2}$/;
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DEFAULT_DAY_START = "10:00";
+const DEFAULT_DAY_END = "20:00";
+
+const rawDayConfigSchema = z.object({
+  isWorking: z.boolean(),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  note: z.string().optional().nullable(),
+});
+type RawDayConfig = z.infer<typeof rawDayConfigSchema>;
+
+const availabilitySchema = z.record(
+  z.string(),
+  z.record(z.string().regex(DAY_KEY_REGEX), rawDayConfigSchema),
+);
+
+function compareTimes(left: string, right: string): number {
+  return left.localeCompare(right, "en");
+}
+
+function normalizeDayConfig(config: RawDayConfig): DaySchedule {
+  const note = config.note !== undefined && config.note !== null ? String(config.note).trim() : undefined;
+  if (!config.isWorking) {
+    return note ? { isWorking: false, note } : { isWorking: false };
+  }
+
+  const rawStart = (config.start ?? "").trim();
+  const rawEnd = (config.end ?? "").trim();
+  const safeStart = TIME_REGEX.test(rawStart) ? rawStart : DEFAULT_DAY_START;
+  let safeEnd = TIME_REGEX.test(rawEnd) ? rawEnd : DEFAULT_DAY_END;
+
+  if (compareTimes(safeEnd, safeStart) <= 0) {
+    safeEnd = compareTimes(DEFAULT_DAY_END, safeStart) > 0 ? DEFAULT_DAY_END : safeStart;
+  }
+
+  const normalized: DaySchedule = { isWorking: true, start: safeStart, end: safeEnd };
+  if (note) {
+    normalized.note = note;
+  }
+  return normalized;
+}
 
 function createDefaultMasters(): Master[] {
   return [
@@ -124,6 +177,47 @@ function createDefaultMessages(): BotMessage[] {
       label: "Приветствие",
       value:
         "👋 Привет! Я бот тату-мастера.\n• Запись в пару кликов\n• Напомню о визите\n• Покажу маршрут до студии\n\nРаботаю 24/7 и экономлю до 8 часов в неделю.",
+      type: "textarea",
+      imageUrl: null,
+    },
+    {
+      id: randomUUID(),
+      key: "route",
+      label: "Как добраться",
+      value: "📍 *{studio}*\n{address}\n\n{links}\n\nНапиши, если нужна помощь с маршрутом.",
+      type: "textarea",
+      imageUrl: null,
+    },
+    {
+      id: randomUUID(),
+      key: "about",
+      label: "О мастерах",
+      value: "Это наши мастера 👆",
+      type: "textarea",
+      imageUrl: null,
+    },
+    {
+      id: randomUUID(),
+      key: "pay",
+      label: "Оплата",
+      value:
+        "💳 *Оплата*\n\n{methods}\n\n_Депозит фиксирует слот и вычитается из стоимости сеанса._",
+      type: "textarea",
+      imageUrl: null,
+    },
+    {
+      id: randomUUID(),
+      key: "certs",
+      label: "Сертификаты",
+      value: "🎁 Наши подарочные сертификаты. Выбирай и дари впечатления.",
+      type: "textarea",
+      imageUrl: null,
+    },
+    {
+      id: randomUUID(),
+      key: "certs_empty",
+      label: "Сертификаты — пусто",
+      value: "Сертификаты пока не загружены.",
       type: "textarea",
       imageUrl: null,
     },
@@ -308,6 +402,63 @@ export class DatabaseStorage {
   private writeDataFile(file: string, data: unknown) {
     this.ensureDataDir();
     fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf-8");
+  }
+
+  private readAvailabilityMap(): Record<string, Record<string, DaySchedule>> {
+    const stored = this.readDataFile<unknown>(AVAILABILITY_FILE, {});
+    const parsed = availabilitySchema.safeParse(stored);
+    if (!parsed.success) {
+      return {};
+    }
+
+    const result: Record<string, Record<string, DaySchedule>> = {};
+    for (const [masterId, days] of Object.entries(parsed.data)) {
+      result[masterId] = {};
+      for (const [date, cfg] of Object.entries(days)) {
+        result[masterId][date] = normalizeDayConfig(cfg);
+      }
+    }
+    return result;
+  }
+
+  async getMasterAvailability(masterId: string, ym?: string): Promise<Record<string, DaySchedule>> {
+    await this.ensureReady();
+    const availability = this.readAvailabilityMap();
+    const days = availability[masterId] ?? {};
+    if (!ym || !MONTH_KEY_REGEX.test(ym)) {
+      return days;
+    }
+    const prefix = `${ym}-`;
+    return Object.fromEntries(Object.entries(days).filter(([date]) => date.startsWith(prefix)));
+  }
+
+  async updateMasterAvailability(
+    masterId: string,
+    updates: Record<string, DaySchedule>,
+    ym?: string,
+  ): Promise<Record<string, DaySchedule>> {
+    await this.ensureReady();
+    const availability = this.readAvailabilityMap();
+    const current = availability[masterId] ?? {};
+
+    for (const [dateKey, value] of Object.entries(updates)) {
+      if (!DAY_KEY_REGEX.test(dateKey)) continue;
+      try {
+        const parsed = rawDayConfigSchema.parse(value);
+        current[dateKey] = normalizeDayConfig(parsed);
+      } catch {
+        continue;
+      }
+    }
+
+    availability[masterId] = current;
+    this.writeDataFile(AVAILABILITY_FILE, availability);
+
+    if (ym && MONTH_KEY_REGEX.test(ym)) {
+      const prefix = `${ym}-`;
+      return Object.fromEntries(Object.entries(current).filter(([date]) => date.startsWith(prefix)));
+    }
+    return current;
   }
 
   private deleteUploadIfLocal(url?: string | null) {

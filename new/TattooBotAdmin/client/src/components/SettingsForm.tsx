@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -80,18 +79,26 @@ export function SettingsForm() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Настройки</h2>
-        <Button onClick={handleSave} data-testid="button-save-settings" disabled={saveMutation.isPending}>
-          <Save className="h-4 w-4 mr-2" />
-          Сохранить
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Настройки студии</h2>
+          <p className="text-sm text-white/50">Обновите токен бота и контактные данные, чтобы бот отвечал корректно.</p>
+        </div>
+        <Button
+          onClick={handleSave}
+          data-testid="button-save-settings"
+          disabled={saveMutation.isPending}
+          className="self-start bg-indigo-600 hover:bg-indigo-500"
+        >
+          <Save className="mr-2 h-4 w-4" />
+          {saveMutation.isPending ? "Сохраняем…" : "Сохранить"}
         </Button>
       </div>
 
-      <div className="grid gap-4">
-        <Card>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+        <Card className="border-white/10 bg-[#121722] text-white">
           <CardHeader>
-            <CardTitle>Telegram Bot</CardTitle>
+            <CardTitle>Telegram-бот</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -103,19 +110,11 @@ export function SettingsForm() {
                 value={settings.botToken}
                 onChange={(e) => setSettings({ ...settings, botToken: e.target.value })}
                 data-testid="input-bot-token"
+                className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
               />
-              <p className="text-xs text-muted-foreground">
-                Получите токен у @BotFather в Telegram
-              </p>
+              <p className="text-xs text-white/40">Получите токен у @BotFather и вставьте его сюда.</p>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Информация о студии</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="studio-name">Название студии</Label>
               <Input
@@ -123,9 +122,29 @@ export function SettingsForm() {
                 value={settings.studioName}
                 onChange={(e) => setSettings({ ...settings, studioName: e.target.value })}
                 data-testid="input-studio-name"
+                className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="working-hours">Режим работы</Label>
+              <Input
+                id="working-hours"
+                value={settings.workingHours ?? ""}
+                onChange={(e) => setSettings({ ...settings, workingHours: e.target.value })}
+                data-testid="input-working-hours"
+                className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
+              />
+              <p className="text-xs text-white/40">Информация выводится в профиле бота и напоминаниях.</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/10 bg-[#121722] text-white">
+          <CardHeader>
+            <CardTitle>Локация студии</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="address">Адрес</Label>
               <Input
@@ -133,6 +152,7 @@ export function SettingsForm() {
                 value={settings.address}
                 onChange={(e) => setSettings({ ...settings, address: e.target.value })}
                 data-testid="input-address"
+                className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
               />
             </div>
 
@@ -144,13 +164,11 @@ export function SettingsForm() {
                 value={settings.yandexMapUrl ?? ""}
                 onChange={(e) => setSettings({ ...settings, yandexMapUrl: e.target.value })}
                 data-testid="input-yandex-map-url"
+                className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
               />
-              <p className="text-xs text-muted-foreground">
-                Откройте Яндекс.Карты, найдите локацию и скопируйте ссылку
-              </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="latitude">Широта</Label>
                 <Input
@@ -159,6 +177,7 @@ export function SettingsForm() {
                   value={settings.latitude ?? ""}
                   onChange={(e) => setSettings({ ...settings, latitude: e.target.value })}
                   data-testid="input-latitude"
+                  className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
                 />
               </div>
               <div className="space-y-2">
@@ -169,18 +188,19 @@ export function SettingsForm() {
                   value={settings.longitude ?? ""}
                   onChange={(e) => setSettings({ ...settings, longitude: e.target.value })}
                   data-testid="input-longitude"
+                  className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
                 />
               </div>
             </div>
 
             {settings.latitude && settings.longitude && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label>Превью карты</Label>
-                <div className="relative aspect-video rounded-lg overflow-hidden border bg-muted">
+                <div className="relative aspect-[3/2] overflow-hidden rounded-lg border border-white/10 bg-black/20">
                   <img
-                    src={`https://static-maps.yandex.ru/1.x/?ll=${settings.longitude},${settings.latitude}&size=600,300&z=16&l=map&pt=${settings.longitude},${settings.latitude},pm2rdm`}
+                    src={`https://static-maps.yandex.ru/1.x/?ll=${settings.longitude},${settings.latitude}&size=600,360&z=16&l=map&pt=${settings.longitude},${settings.latitude},pm2rdm`}
                     alt="Map preview"
-                    className="w-full h-full object-cover"
+                    className="h-full w-full object-cover"
                   />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -190,11 +210,14 @@ export function SettingsForm() {
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
-                      window.open(settings.yandexMapUrl, '_blank');
+                      if (settings.yandexMapUrl) {
+                        window.open(settings.yandexMapUrl, "_blank");
+                      }
                     }}
                     data-testid="button-open-yandex"
+                    className="border-white/20 text-white/80 hover:bg-white/10"
                   >
-                    Открыть в Яндекс.Картах
+                    Яндекс.Карты
                   </Button>
                   <Button
                     variant="outline"
@@ -202,11 +225,12 @@ export function SettingsForm() {
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
-                      window.open(`https://maps.google.com/?q=${settings.latitude},${settings.longitude}`, '_blank');
+                      window.open(`https://maps.google.com/?q=${settings.latitude},${settings.longitude}`, "_blank");
                     }}
                     data-testid="button-open-google"
+                    className="border-white/20 text-white/80 hover:bg-white/10"
                   >
-                    Открыть в Google Maps
+                    Google Maps
                   </Button>
                   <Button
                     variant="outline"
@@ -218,43 +242,13 @@ export function SettingsForm() {
                       window.location.href = tgUrl;
                     }}
                     data-testid="button-open-telegram"
+                    className="border-white/20 text-white/80 hover:bg-white/10"
                   >
-                    Открыть в Telegram
+                    Telegram
                   </Button>
                 </div>
               </div>
             )}
-
-            <div className="space-y-2">
-              <Label htmlFor="working-hours">Режим работы</Label>
-              <Input
-                id="working-hours"
-                value={settings.workingHours ?? ""}
-                onChange={(e) => setSettings({ ...settings, workingHours: e.target.value })}
-                data-testid="input-working-hours"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Способы оплаты</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="payment-methods">Принимаемые способы оплаты</Label>
-              <Textarea
-                id="payment-methods"
-                rows={4}
-                value={settings.paymentMethods}
-                onChange={(e) => setSettings({ ...settings, paymentMethods: e.target.value })}
-                data-testid="textarea-payment-methods"
-              />
-              <p className="text-xs text-muted-foreground">
-                Укажите все способы оплаты, которые принимаете
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

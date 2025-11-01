@@ -68,53 +68,49 @@ function ProtectedAppShell() {
     <ProtectedRoute>
       <div className="flex min-h-screen bg-[#0f1218] text-white">
         <div className="hidden md:block">
-          <AppSidebar />
+          <AppSidebar
+            onLogout={handleLogout}
+          />
         </div>
 
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent side="left" className="w-[260px] border-r-0 bg-[#14171f] p-0 text-white md:hidden">
-            <AppSidebar variant="mobile" onNavigate={handleNavigate} />
+            <AppSidebar variant="mobile" onNavigate={handleNavigate} onLogout={handleLogout} />
           </SheetContent>
         </Sheet>
 
         <div className="flex flex-1 flex-col">
-          <header className="flex items-center gap-3 border-b border-white/10 bg-[#121620]/70 px-4 py-4 backdrop-blur md:px-8">
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="border-white/20 text-white/80 hover:bg-white/10 md:hidden"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Открыть меню"
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-
-            <div className="ml-1 flex flex-1 items-center justify-between md:ml-0">
-              <div className="flex flex-col">
-                <span className="text-xs uppercase tracking-wide text-white/40">Панель управления</span>
-                <span className="text-lg font-semibold text-white/90" data-testid="text-current-page">
-                  {activeItem?.title ?? "Добро пожаловать"}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <ThemeToggle />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-white/20 text-white/80 hover:bg-white/10"
-                  onClick={handleLogout}
-                  data-testid="button-logout"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Выйти
-                </Button>
-              </div>
-            </div>
-          </header>
-
           <main className="flex-1 overflow-y-auto bg-[#0b0e13] p-4 md:p-8">
+            <div className="mb-4 flex flex-col gap-3 md:hidden">
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="border-white/20 text-white/80 hover:bg-white/10"
+                  onClick={() => setMobileOpen(true)}
+                  aria-label="Открыть меню"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <ThemeToggle />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-white/20 text-white/80 hover:bg-white/10"
+                    onClick={handleLogout}
+                    data-testid="button-logout"
+                    aria-label="Выйти"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pl-1 text-sm uppercase tracking-wide text-white/40">{activeItem?.title ?? "Добро пожаловать"}</div>
+            </div>
             <AppRoutes />
           </main>
         </div>
