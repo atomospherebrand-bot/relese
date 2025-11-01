@@ -15,9 +15,9 @@ export function attachStatsRoutes(api: Router) {
   api.get("/stats", wrap(async (_req, res) => {
     const storage = getStorage();
     const [masters, services, bookings] = await Promise.all([
-      storage.getMasters(),
-      storage.getServices(),
-      storage.getBookings(),
+      storage.listMasters(),
+      storage.listServices(),
+      storage.listBookings(),
     ]);
 
     const todayISO = new Date().toISOString().slice(0,10);
