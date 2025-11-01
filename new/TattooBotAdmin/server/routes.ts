@@ -21,6 +21,7 @@ import {
   bookingStatusSchema,
   botMessageSchema,
   settingsSchema,
+  insertCertificateSchema,
   type BotAction,
 } from "@shared/schema";
 import portfolioRouter from "./routes/portfolio";
@@ -236,6 +237,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   api.get(
+    "/clients",
+    asyncHandler(async (_req, res) => {
+      const clients = await storage.listClientSummaries();
+      res.json({ clients });
+    }),
+  );
+
+  api.get(
+    "/clients/export",
+    asyncHandler(async (req, res) => {
+      const { fmt } = z
+        .object({ fmt: z.enum(["xlsx", "csv"]).default("xlsx") })
+        .parse(req.query);
+
+      const clients = await storage.listClientSummaries();
+      const rows = clients.map((client) => ({
+        Имя: client.fullName,
+        Телеграм: client.username ? `@${client.username}` : "",
+        Телефон: client.phone ?? "",
+        Теги: (client.tags ?? []).join(", "),
+        Создан: client.createdAt?.slice(0, 10) ?? "",
+        Последний_визит: client.lastVisitAt?.slice(0, 10) ?? "",
+        Записей: client.bookingsCount ?? 0,
+      }));
+
+      if (fmt === "csv") {
+        const header = Object.keys(
+          rows[0] ?? {
+            Имя: "",
+            Телеграм: "",
+            Телефон: "",
+            Теги: "",
+            Создан: "",
+            Последний_визит: "",
+            Записей: 0,
+          },
+        );
+        const lines = [header.join(";")].concat(
+          rows.map((row) => header.map((key) => String((row as any)[key] ?? "")).join(";")),
+        );
+        const csv = "\uFEFF" + lines.join("\n");
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", "attachment; filename=clients.csv");
+        return res.send(csv);
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Clients");
+      const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "buffer" });
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", "attachment; filename=clients.xlsx");
+      return res.send(buffer);
+    }),
+  );
+
+  api.get(
     "/settings",
     asyncHandler(async (_req, res) => {
       const settings = await storage.getSettings();
@@ -268,6 +329,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json({ settings, botRestarted, botAction, botRestartMessage });
+    }),
+  );
+
+  api.get(
+    "/certs",
+    asyncHandler(async (_req, res) => {
+      const certs = await storage.listCertificates();
+      res.json({ certs });
+    }),
+  );
+
+  api.post(
+    "/certs",
+    asyncHandler(async (req, res) => {
+      const payload = insertCertificateSchema.parse(req.body ?? {});
+      const cert = await storage.addCertificate(payload);
+      res.status(201).json({ cert });
+    }),
+  );
+
+  api.delete(
+    "/certs/:id",
+    asyncHandler(async (req, res) => {
+      const removed = await storage.removeCertificate(req.params.id);
+      if (!removed) {
+        return res.status(404).json({ message: "Сертификат не найден" });
+      }
+      res.status(204).send();
     }),
   );
 

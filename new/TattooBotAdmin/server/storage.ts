@@ -1,4 +1,6 @@
-import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
+import { createHash, randomUUID } from "crypto";
 import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import {
   bookingSchema,
@@ -6,7 +8,10 @@ import {
   bookingsTable,
   botMessageSchema,
   botMessagesTable,
+  certificateSchema,
+  clientSummarySchema,
   insertBookingSchema,
+  insertCertificateSchema,
   insertMasterSchema,
   insertServiceSchema,
   masterSchema,
@@ -19,6 +24,8 @@ import {
   settingsTable,
   type Booking,
   type BotMessage,
+  type Certificate,
+  type ClientSummary,
   type InsertBooking,
   type InsertMaster,
   type InsertService,
@@ -46,6 +53,10 @@ function normalizeUploadUrl(u: string | null | undefined): string {
 function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const CERTS_FILE = path.join(DATA_DIR, "certs.json");
+const CLIENTS_FILE = path.join(DATA_DIR, "clients.json");
 
 function createDefaultMasters(): Master[] {
   return [
@@ -275,6 +286,39 @@ export class DatabaseStorage {
         paymentMethods: DEFAULT_SETTINGS.paymentMethods,
         workingHours: DEFAULT_SETTINGS.workingHours,
       });
+    }
+  }
+
+  private ensureDataDir() {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  }
+
+  private readDataFile<T>(file: string, fallback: T): T {
+    this.ensureDataDir();
+    try {
+      const raw = fs.readFileSync(file, "utf-8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private writeDataFile(file: string, data: unknown) {
+    this.ensureDataDir();
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf-8");
+  }
+
+  private deleteUploadIfLocal(url?: string | null) {
+    if (!url || !url.startsWith("/uploads/")) return;
+    const fullPath = path.join(process.cwd(), url);
+    try {
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+      }
+    } catch {
+      // ignore errors removing assets
     }
   }
 
@@ -742,6 +786,116 @@ try {
     return this.listMessages();
   }
 
+  async listClientSummaries(): Promise<ClientSummary[]> {
+    await this.ensureReady();
+    const rows = await this.database
+      .select({
+        clientName: bookingsTable.clientName,
+        clientPhone: bookingsTable.clientPhone,
+        clientTelegram: bookingsTable.clientTelegram,
+        firstDate: sql<string>`min(${bookingsTable.date})`,
+        lastDate: sql<string>`max(${bookingsTable.date})`,
+        firstCreated: sql<string>`min(${bookingsTable.createdAt})`,
+        lastCreated: sql<string>`max(${bookingsTable.createdAt})`,
+        bookingsCount: sql<number>`count(*)`,
+      })
+      .from(bookingsTable)
+      .groupBy(bookingsTable.clientName, bookingsTable.clientPhone, bookingsTable.clientTelegram)
+      .orderBy(sql`max(${bookingsTable.createdAt}) DESC`);
+
+    const toIso = (value: unknown, fallback?: string): string | undefined => {
+      if (!value) return fallback;
+      if (value instanceof Date) return value.toISOString();
+      const str = String(value);
+      if (!str) return fallback;
+      const date = new Date(str);
+      if (!Number.isNaN(date.getTime())) return date.toISOString();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return new Date(`${str}T00:00:00Z`).toISOString();
+      }
+      return fallback;
+    };
+
+    const summaries = rows.map((row) => {
+      const rawTelegram = optional(row.clientTelegram)?.toString().trim();
+      const username = rawTelegram ? rawTelegram.replace(/^@/, "") : undefined;
+      const phone = row.clientPhone ? String(row.clientPhone).trim() : undefined;
+      const name = row.clientName ? String(row.clientName).trim() : "Гость";
+
+      const keySource =
+        (username ? `tg:${username.toLowerCase()}` : null) ||
+        (phone ? `ph:${phone.replace(/\D/g, "")}` : null) ||
+        `name:${name.toLowerCase()}`;
+
+      const id = createHash("sha1").update(keySource).digest("hex");
+
+      const createdAt =
+        toIso((row as any).firstCreated) ||
+        toIso((row as any).firstDate) ||
+        new Date().toISOString();
+      const lastVisitAt =
+        toIso((row as any).lastCreated) ||
+        toIso((row as any).lastDate) ||
+        undefined;
+
+      return clientSummarySchema.parse({
+        id,
+        fullName: name,
+        phone: phone ?? null,
+        telegramId: null,
+        username: username ?? null,
+        consentMarketing: false,
+        tags: [],
+        createdAt,
+        lastVisitAt: lastVisitAt ?? null,
+        bookingsCount: Number((row as any).bookingsCount ?? 0),
+      });
+    });
+
+    this.writeDataFile(CLIENTS_FILE, summaries);
+    return summaries;
+  }
+
+  async listCertificates(): Promise<Certificate[]> {
+    await this.ensureReady();
+    const stored = this.readDataFile<unknown[]>(CERTS_FILE, []);
+    return z.array(certificateSchema).parse(stored);
+  }
+
+  async addCertificate(input: { url: string; type: "image" | "video"; caption?: string | null }): Promise<Certificate> {
+    await this.ensureReady();
+    const existing = await this.listCertificates();
+    const normalizedUrl = normalizeUploadUrl(input.url) || input.url;
+    const payload = insertCertificateSchema.parse({
+      url: normalizedUrl,
+      type: input.type,
+      caption: input.caption ? String(input.caption).trim() || undefined : undefined,
+    });
+
+    const entry = certificateSchema.parse({
+      id: randomUUID(),
+      url: payload.url,
+      type: payload.type,
+      caption: payload.caption ?? null,
+      uploadedAt: new Date().toISOString(),
+    });
+
+    const next = [entry, ...existing];
+    this.writeDataFile(CERTS_FILE, next);
+    return entry;
+  }
+
+  async removeCertificate(id: string): Promise<boolean> {
+    await this.ensureReady();
+    const existing = await this.listCertificates();
+    const index = existing.findIndex((item) => item.id === id);
+    if (index === -1) return false;
+    const [removed] = existing.splice(index, 1);
+    this.writeDataFile(CERTS_FILE, existing);
+    this.deleteUploadIfLocal(removed?.url);
+    return true;
+  }
+
   async listPortfolio(): Promise<PortfolioItem[]> {
     await this.ensureReady();
     const rows = await this.database
@@ -883,13 +1037,31 @@ try {
 
   async dashboardSummary() {
     await this.ensureReady();
-    const bookings = await this.listBookings();
+    const [bookings, clientSummaries, certificates, portfolio] = await Promise.all([
+      this.listBookings(),
+      this.listClientSummaries(),
+      this.listCertificates(),
+      this.listPortfolio(),
+    ]);
     const today = new Date().toISOString().split("T")[0];
     const sevenDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
     const bookingsToday = bookings.filter(
       (b) => b.date === today && b.status !== "cancelled",
     ).length;
+
+    const pendingBookings = bookings.filter((b) => b.status === "pending").length;
+    const cancelledWeek = bookings.filter((b) => b.status === "cancelled" && b.date >= sevenDaysAgo).length;
+
+    const newClientsWeek = clientSummaries.filter((client) => {
+      const created = client.createdAt?.slice(0, 10) ?? "";
+      return created >= sevenDaysAgo;
+    }).length;
+
+    const returningClientsWeek = clientSummaries.filter((client) => {
+      if (!client.lastVisitAt || client.bookingsCount < 2) return false;
+      return client.lastVisitAt.slice(0, 10) >= sevenDaysAgo;
+    }).length;
 
     const activeMastersCount = await this.database
       .select({ id: mastersTable.id })
@@ -928,6 +1100,13 @@ try {
         activeMasters: activeMastersCount.length,
         revenueWeek,
         averageDuration,
+        pendingBookings,
+        cancelledWeek,
+        newClientsWeek,
+        returningClientsWeek,
+        certificatesCount: certificates.length,
+        portfolioCount: portfolio.length,
+        clientsTotal: clientSummaries.length,
       },
       recentBookings,
     };

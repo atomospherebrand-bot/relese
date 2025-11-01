@@ -170,6 +170,29 @@ export const portfolioItemSchema = z.object({
   createdAt: z.string().optional(),
 });
 
+export const certificateSchema = z.object({
+  id: z.string(),
+  url: z.string().min(1),
+  type: z.enum(["image", "video"]),
+  caption: z.string().optional().nullable(),
+  uploadedAt: z.string(),
+});
+
+export const insertCertificateSchema = certificateSchema.omit({ id: true, uploadedAt: true });
+
+export const clientSummarySchema = z.object({
+  id: z.string(),
+  fullName: z.string().min(1),
+  phone: z.string().optional().nullable(),
+  telegramId: z.union([z.string(), z.number()]).optional().nullable(),
+  username: z.string().optional().nullable(),
+  consentMarketing: z.boolean().optional().default(false),
+  tags: z.array(z.string()).optional().default([]),
+  createdAt: z.string(),
+  lastVisitAt: z.string().optional().nullable(),
+  bookingsCount: z.number().int().nonnegative(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Master = z.infer<typeof masterSchema>;
@@ -182,3 +205,5 @@ export type BotMessage = z.infer<typeof botMessageSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
 export type PortfolioItem = z.infer<typeof portfolioItemSchema>;
 export type BotAction = z.infer<typeof botActionSchema>;
+export type Certificate = z.infer<typeof certificateSchema>;
+export type ClientSummary = z.infer<typeof clientSummarySchema>;

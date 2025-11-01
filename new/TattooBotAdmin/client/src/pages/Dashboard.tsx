@@ -1,7 +1,7 @@
 import React from "react";
 import { StatsCard } from "@/components/StatsCard";
 import { RecentBookings } from "@/components/RecentBookings";
-import { Calendar, Users, DollarSign, Clock } from "lucide-react";
+import { Calendar, Users, DollarSign, Clock, BadgeCheck, Image as ImageIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,7 +59,18 @@ export default function Dashboard() {
     );
   }
 
-  const { bookingsToday, activeMasters, revenueWeek } = dashboardQuery.data.stats;
+  const {
+    bookingsToday,
+    activeMasters,
+    revenueWeek,
+    pendingBookings,
+    cancelledWeek,
+    newClientsWeek,
+    returningClientsWeek,
+    certificatesCount,
+    portfolioCount,
+    clientsTotal,
+  } = dashboardQuery.data.stats;
 
   return (
     <div className="space-y-6">
@@ -75,6 +86,33 @@ export default function Dashboard() {
         <StatsCard title="Активные мастера" value={activeMasters} icon={Users} />
         <StatsCard title="Доход за неделю" value={formatCurrency.format(revenueWeek)} icon={DollarSign} />
         <StatsCard title="Ср. время записи" value={averageHours} icon={Clock} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatsCard
+          title="Клиентская база"
+          value={clientsTotal}
+          icon={Users}
+          description={`+${newClientsWeek} новых, ${returningClientsWeek} возвратов`}
+        />
+        <StatsCard
+          title="В ожидании"
+          value={pendingBookings}
+          icon={Clock}
+          description={`Отменено за 7 дней: ${cancelledWeek}`}
+        />
+        <StatsCard
+          title="Активные сертификаты"
+          value={certificatesCount}
+          icon={BadgeCheck}
+          description="Готовы к выдаче в боте"
+        />
+        <StatsCard
+          title="Работы в портфолио"
+          value={portfolioCount}
+          icon={ImageIcon}
+          description="Отображаются пользователям"
+        />
       </div>
 
       <RecentBookings bookings={bookings} />

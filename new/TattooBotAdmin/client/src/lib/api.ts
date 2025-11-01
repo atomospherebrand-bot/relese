@@ -7,9 +7,12 @@ import {
   type Settings,
   type PortfolioItem,
   type BotAction,
+  type Certificate,
+  type ClientSummary,
   insertMasterSchema,
   insertServiceSchema,
   insertBookingSchema,
+  insertCertificateSchema,
   botMessageSchema,
   settingsSchema,
   portfolioItemSchema,
@@ -84,19 +87,30 @@ type DashboardResponse = {
     activeMasters: number;
     revenueWeek: number;
     averageDuration: number;
+    pendingBookings: number;
+    cancelledWeek: number;
+    newClientsWeek: number;
+    returningClientsWeek: number;
+    certificatesCount: number;
+    portfolioCount: number;
+    clientsTotal: number;
   };
   recentBookings: Booking[];
 };
 
 export const api = {
-  async uploadFile(file: File, options?: { thumbnail?: File | null }): Promise<UploadResult> {
+  async uploadFile(
+    file: File,
+    options?: { thumbnail?: File | null; subdir?: string },
+  ): Promise<UploadResult> {
     const formData = new FormData();
     formData.append("file", file);
     if (options?.thumbnail) {
       formData.append("thumbnail", options.thumbnail);
     }
 
-    const response = await fetch(`${BASE_URL}/upload`, {
+    const query = options?.subdir ? `?subdir=${encodeURIComponent(options.subdir)}` : "";
+    const response = await fetch(`${BASE_URL}/upload${query}`, {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -384,26 +398,58 @@ export const api = {
     return request<PortfolioFiltersResponse>(`/portfolio/filters`);
   },
 
-async uploadFile(file: File, subdir: string): Promise<string> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`${baseUrl()}/upload?subdir=${encodeURIComponent(subdir)}`, { method: "POST", body: fd });
-  if (!res.ok) throw new Error(await res.text());
-  const json = await res.json();
-  return json.url as string;
-},
+  async getClients(): Promise<ClientSummary[]> {
+    const { clients } = await request<{ clients: ClientSummary[] }>(`/clients`);
+    return clients;
+  },
 
-async getCerts(): Promise<{ certs: any[] }> {
-  return request<{ certs: any[] }>(`/certs`);
-},
+  async exportClients(format: "xlsx" | "csv" = "xlsx"): Promise<Blob> {
+    const response = await fetch(`${BASE_URL}/clients/export?fmt=${encodeURIComponent(format)}`, {
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Не удалось экспортировать клиентов");
+    }
+    return await response.blob();
+  },
 
-async createCert(payload: { file?: File; type: "image"|"video"; caption?: string }): Promise<{ cert: any }> {
-  if (!payload.file) throw new Error("file required");
-  const url = await this.uploadFile(payload.file, "certs");
-  return request<{ cert: any }>(`/certs`, { method: "POST", body: JSON.stringify({ url, type: payload.type, caption: payload.caption }) });
-},
+  async getCertificates(): Promise<Certificate[]> {
+    const { certs } = await request<{ certs: Certificate[] }>(`/certs`);
+    return certs;
+  },
 
-async deleteCert(id: string): Promise<{ ok: boolean }> {
-  return request<{ ok: boolean }>(`/certs/${id}`, { method: "DELETE" });
-},
+  async createCertificate(payload: {
+    file?: File | null;
+    url?: string | null;
+    type: "image" | "video";
+    caption?: string;
+  }): Promise<Certificate> {
+    let mediaUrl = sanitizeString(payload.url);
+
+    if (payload.file) {
+      const uploaded = await this.uploadFile(payload.file, { subdir: "certs" });
+      mediaUrl = uploaded.url;
+    }
+
+    if (!mediaUrl) {
+      throw new Error("Не указан файл или ссылка на медиа");
+    }
+
+    const body = insertCertificateSchema.parse({
+      url: mediaUrl,
+      type: payload.type,
+      caption: sanitizeString(payload.caption),
+    });
+
+    const { cert } = await request<{ cert: Certificate }>(`/certs`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return cert;
+  },
+
+  async deleteCertificate(id: string): Promise<void> {
+    await request<void>(`/certs/${id}`, { method: "DELETE" });
+  },
 };

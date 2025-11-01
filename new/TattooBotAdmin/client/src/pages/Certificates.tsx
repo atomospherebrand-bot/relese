@@ -1,93 +1,290 @@
-// client/src/pages/Certificates.tsx
 import React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, RefreshCw, PlusCircle, Clock3 } from "lucide-react";
+import type { Certificate } from "@shared/schema";
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "/api";
-
-async function getCerts() {
-  const res = await fetch(API_BASE + "/certs", { credentials: "include" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-async function uploadFile(file: File, subdir: string) {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(API_BASE + `/upload?subdir=${encodeURIComponent(subdir)}`, { method: "POST", body: fd, credentials: "include" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function formatDate(value?: string) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function CertificatesPage() {
-  const [items, setItems] = React.useState<any[]>([]);
-  const [type, setType] = React.useState<"image"|"video">("image");
-  const [caption, setCaption] = React.useState("");
-  const [file, setFile] = React.useState<File | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setDialogOpen] = React.useState(false);
 
-  const refresh = React.useCallback(() => {
-    getCerts().then(d => setItems(d.certs || [])).catch(e => setErr(String(e)));
-  }, []);
+  const certificatesQuery = useQuery({
+    queryKey: ["certificates"],
+    queryFn: api.getCertificates,
+  });
 
-  React.useEffect(() => { refresh(); }, [refresh]);
-
-  const onAdd = async () => {
-    if (!file) return;
-    try {
-      const { url } = await uploadFile(file, "certs");
-      const res = await fetch(API_BASE + "/certs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ url, type, caption: caption || undefined })
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => api.deleteCertificate(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["certificates"] });
+      toast({ title: "Удалено", description: "Сертификат удалён из витрины" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Не удалось удалить",
+        description: error.message,
+        variant: "destructive",
       });
-      if (!res.ok) throw new Error(await res.text());
-      setFile(null); setCaption("");
-      refresh();
-    } catch (e: any) {
-      setErr(String(e));
-    }
+    },
+  });
+
+  const handleRefresh = () => {
+    certificatesQuery.refetch();
   };
 
-  const onDelete = async (id: string) => {
-    await fetch(API_BASE + `/certs/${id}`, { method: "DELETE", credentials: "include" });
-    refresh();
+  const certificates = certificatesQuery.data ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold text-white">Сертификаты</h1>
+          <p className="text-sm text-white/60">
+            Управляйте подарочными сертификатами: загружайте изображения или видео и держите витрину бота в актуальном состоянии.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={certificatesQuery.isFetching}
+            className="gap-2 border-white/20 text-white/80 hover:bg-white/10"
+          >
+            <RefreshCw className={`h-4 w-4 ${certificatesQuery.isFetching ? "animate-spin" : ""}`} />
+            Обновить
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button type="button" className="gap-2 bg-indigo-600 hover:bg-indigo-500">
+                <PlusCircle className="h-4 w-4" />
+                Добавить сертификат
+              </Button>
+            </DialogTrigger>
+            <CertificateDialog
+              onClose={() => setDialogOpen(false)}
+              onCreated={() => {
+                setDialogOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["certificates"] });
+              }}
+            />
+          </Dialog>
+        </div>
+      </div>
+
+      {certificatesQuery.isError ? (
+        <Alert variant="destructive" className="border border-red-500/40 bg-red-500/10 text-red-100">
+          <AlertTitle>Не удалось загрузить сертификаты</AlertTitle>
+          <AlertDescription>{(certificatesQuery.error as Error)?.message ?? "Попробуйте обновить страницу"}</AlertDescription>
+        </Alert>
+      ) : (
+        <Card className="border-white/10 bg-[#141821] text-white">
+          <CardHeader className="flex items-center justify-between border-b border-white/5">
+            <CardTitle className="text-base font-semibold text-white/80">
+              Всего сертификатов: {certificates.length}
+            </CardTitle>
+            <Badge variant="outline" className="border-white/20 text-white/60">
+              <Clock3 className="mr-1 h-3 w-3" />
+              Обновлено {formatDate(new Date().toISOString())}
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-6">
+            {certificatesQuery.isLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <Skeleton key={index} className="h-56 w-full rounded-xl bg-white/10" />
+                ))}
+              </div>
+            ) : certificates.length === 0 ? (
+              <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-white/60">
+                <p>Здесь пока пусто.</p>
+                <p>Загрузите изображение или видео, чтобы сертификат появился в боте.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {certificates.map((cert) => (
+                  <CertificateCard
+                    key={cert.id}
+                    certificate={cert}
+                    onRemove={() => removeMutation.mutate(cert.id)}
+                    removing={removeMutation.isPending && removeMutation.variables === cert.id}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+type CertificateDialogProps = {
+  onClose: () => void;
+  onCreated: () => void;
+};
+
+function CertificateDialog({ onClose, onCreated }: CertificateDialogProps) {
+  const { toast } = useToast();
+  const createMutation = useMutation({
+    mutationFn: api.createCertificate,
+    onSuccess: () => {
+      toast({ title: "Готово", description: "Сертификат добавлен" });
+      setFile(null);
+      setUrl("");
+      setCaption("");
+      setType("image");
+      onCreated();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Не удалось сохранить", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [file, setFile] = React.useState<File | null>(null);
+  const [url, setUrl] = React.useState("");
+  const [type, setType] = React.useState<"image" | "video">("image");
+  const [caption, setCaption] = React.useState("");
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    createMutation.mutate({
+      file: file ?? undefined,
+      url: url || undefined,
+      type,
+      caption,
+    });
   };
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Сертификаты</h1>
-        <div className="flex items-center gap-2">
-          <select value={type} onChange={(e)=>setType(e.target.value as any)} className="rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm">
-            <option value="image">Изображение</option>
-            <option value="video">Видео</option>
-          </select>
-          <input type="file" accept={type==="image" ? "image/*" : "video/*"} onChange={(e)=>setFile(e.target.files?.[0] ?? null)} className="text-sm" />
-          <input value={caption} onChange={(e)=>setCaption(e.target.value)} placeholder="Подпись (необязательно)" className="rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm w-60" />
-          <button onClick={onAdd} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60" disabled={!file}>Добавить</button>
-      </div>
-      </div>
-
-      {err && <div className="text-sm text-red-400">{err}</div>}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {items.map((it) => (
-          <div key={it.id} className="rounded-xl border border-white/10 bg-[#1c1f26] p-2">
-            {it.type === "video" ? (
-              <video src={it.url} controls className="w-full h-48 rounded-md" />
-            ) : (
-              <img src={it.url} alt={it.caption ?? ""} className="w-full h-48 object-cover rounded-md" />
-            )}
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-xs text-white/60 truncate">{it.caption ?? "—"}</div>
-              <button onClick={()=>onDelete(it.id)} className="text-xs text-red-400 hover:text-red-300">Удалить</button>
-            </div>
+    <DialogContent className="sm:max-w-lg border-white/10 bg-[#141821] text-white">
+      <DialogHeader>
+        <DialogTitle>Новый сертификат</DialogTitle>
+        <DialogDescription className="text-xs text-white/60">
+          Загрузите файл или вставьте прямую ссылку на изображение/видео. Подпись появится в карточке сертификата.
+        </DialogDescription>
+      </DialogHeader>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Тип медиа</Label>
+            <Select value={type} onValueChange={(value) => setType(value as "image" | "video") }>
+              <SelectTrigger className="border-white/10 bg-black/20 text-white">
+                <SelectValue placeholder="Выберите тип" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#141821] text-white">
+                <SelectItem value="image">Изображение</SelectItem>
+                <SelectItem value="video">Видео</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        ))}
-        {items.length === 0 && (
-          <div className="text-sm text-white/60">Пока нет медиа. Загрузите изображение или видео.</div>
+          <div className="space-y-2">
+            <Label>Подпись</Label>
+            <Input
+              value={caption}
+              onChange={(event) => setCaption(event.target.value)}
+              placeholder="Например, «Подарочный сертификат на 3000 ₽»"
+              className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Файл</Label>
+          <Input
+            type="file"
+            accept={type === "image" ? "image/*" : "video/*"}
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            className="border-white/10 bg-black/20 text-white file:text-white"
+          />
+          <p className="text-xs text-white/40">Можно загрузить файл или указать публичный URL ниже.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Ссылка на медиа</Label>
+          <Textarea
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://example.com/certificate.jpg"
+            className="border-white/10 bg-black/20 text-white placeholder:text-white/40"
+            rows={2}
+          />
+        </div>
+
+        <CardFooter className="flex items-center justify-end gap-2 border-t border-white/5 pt-4">
+          <Button type="button" variant="ghost" onClick={onClose} className="text-white/70 hover:bg-white/10">
+            Отмена
+          </Button>
+          <Button
+            type="submit"
+            disabled={createMutation.isPending}
+            className="bg-indigo-600 hover:bg-indigo-500"
+          >
+            {createMutation.isPending ? "Сохраняем…" : "Добавить"}
+          </Button>
+        </CardFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+type CertificateCardProps = {
+  certificate: Certificate;
+  onRemove: () => void;
+  removing: boolean;
+};
+
+function CertificateCard({ certificate, onRemove, removing }: CertificateCardProps) {
+  return (
+    <Card className="overflow-hidden border-white/10 bg-black/20 text-white">
+      <div className="relative aspect-[4/5] w-full overflow-hidden bg-black/30">
+        {certificate.type === "video" ? (
+          <video src={certificate.url} controls className="h-full w-full object-cover" />
+        ) : (
+          <img src={certificate.url} alt={certificate.caption ?? ""} className="h-full w-full object-cover" />
         )}
       </div>
-    </div>
+      <CardContent className="space-y-2 p-4">
+        <p className="text-sm font-medium text-white/90">
+          {certificate.caption || "Без подписи"}
+        </p>
+        <p className="text-xs text-white/50">Добавлено {formatDate(certificate.uploadedAt)}</p>
+      </CardContent>
+      <CardFooter className="flex items-center justify-end gap-2 border-t border-white/5 bg-black/10 p-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={removing}
+          className="gap-1 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+        >
+          <Trash2 className="h-4 w-4" />
+          {removing ? "Удаляем…" : "Удалить"}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

@@ -40,6 +40,7 @@ export default function AppSidebar({ className, onNavigate, variant = "desktop" 
     <aside
       className={cn(
         "flex h-full w-[240px] flex-col border-white/10 bg-[#14171f] text-white/90",
+        variant === "desktop" && "sticky top-0 h-screen",
         variant === "mobile" && "w-full max-w-[260px]",
         className,
       )}

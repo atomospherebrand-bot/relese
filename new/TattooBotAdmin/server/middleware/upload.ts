@@ -9,8 +9,28 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, UPLOAD_DIR);
+  destination: (req, _file, cb) => {
+    const querySubdir = (() => {
+      const value = (req.query?.subdir ?? req.body?.subdir) as unknown;
+      if (typeof value === "string") return value;
+      if (Array.isArray(value)) return value[0];
+      return undefined;
+    })();
+
+    const sanitized = querySubdir
+      ? String(querySubdir)
+          .replace(/\.\.+/g, "")
+          .replace(/[^a-zA-Z0-9/_-]+/g, "-")
+          .replace(/^\/+/, "")
+          .replace(/\/+/g, "/")
+      : "";
+
+    const targetDir = sanitized ? path.join(UPLOAD_DIR, sanitized) : UPLOAD_DIR;
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    cb(null, targetDir);
   },
   filename: (_req, file, cb) => {
     const ts = Date.now();
