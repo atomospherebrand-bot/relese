@@ -302,47 +302,56 @@ def kb_master_card(master_id, teletype_url):
 
 # ===== home helpers =====
 def show_home(update_or_query, kb=None):
-    
-s = safe_get_settings()
-address = s.get("address", "Адрес уточним в чате")
-when = datetime.fromisoformat(dt_iso).astimezone(TZ).strftime("%d.%m.%Y • %H:%M")
+    """Совместимость со старым кодом, отдаёт приветственный экран."""
+    kb = kb or kb_main()
+    s = safe_get_settings()
+    welcome_text = bot_text(
+        "welcome",
+        s.get("welcomeText")
+        or (
+            "👋 Привет! Я бот тату-студии.\n"
+            "• Запись в пару кликов\n• Напомню о визите\n• Покажу маршрут до студии\n"
+            "• Расскажу о мастерах, портфолио и сертификатах\n\nРаботаю 24/7."
+        ),
+    )
+    welcome_img = bot_image("welcome")
+    try:
+        if getattr(update_or_query, "message", None):
+            if welcome_img:
+                send_photo_safe(update_or_query.message, welcome_img, welcome_text, kb)
+            else:
+                update_or_query.message.reply_text(
+                    welcome_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb,
+                )
+        else:
+            q = update_or_query.callback_query
+            if welcome_img:
+                try:
+                    q.message.delete()
+                except Exception:
+                    pass
+                send_photo_safe(q.message, welcome_img, welcome_text, kb)
+            else:
+                q.edit_message_text(
+                    welcome_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb,
+                )
+    except Exception as e:
+        log.warning("show_home failed: %s", e)
 
-master_name = (
-    ctx.user_data.get("masters", {})
-    .get(ctx.user_data.get("master_id"), {})
-    .get("name")
-) or "Мастер"
 
-txt = (
-    "🕓 *Заявка в обработке*
+def notify_register_chat(booking_id: str, chat_id: int) -> None:
+    try:
+        api_post(
+            "/api/notifications/register-chat",
+            {"bookingId": booking_id, "chatId": chat_id},
+        )
+    except Exception as e:
+        log.debug("notify_register_chat failed: %s", e)
 
-"
-    f"*Услуга:* {svc.get('name', 'Услуга')}
-"
-    f"*Мастер:* {master_name}
-"
-    f"*Дата и время:* {when}
-"
-    f"*Адрес:* {address}
-
-"
-    "Мы подтвердим запись и пришлём напоминания заранее."
-)
-
-update.message.reply_text(
-    txt,
-    parse_mode=ParseMode.MARKDOWN,
-    reply_markup=kb_back_home()
-)
-
-try:
-    bid = (created.get("id") or (created.get("booking") or {}).get("id"))
-    if bid:
-        notify_register_chat(str(bid), update.effective_chat.id)
-except Exception as e:
-    log.debug("register chat failed: %s", e)
-
-return ConversationHandler.END
 
 # ===== conversation states =====
 (
@@ -592,18 +601,42 @@ def finalize_booking(update, ctx: CallbackContext):
         )
         return ConversationHandler.END
 
+    booking = created.get("booking") if isinstance(created, dict) else created
+    if not isinstance(booking, dict):
+        booking = {}
+
+    status = (booking.get("status") or created.get("status") or "").lower()
+
     s = safe_get_settings()
     address = s.get("address", "Адрес уточним в чате")
     when = datetime.fromisoformat(dt_iso).astimezone(TZ).strftime("%d.%m.%Y • %H:%M")
+    master = (ctx.user_data.get("masters", {}) or {}).get(ctx.user_data.get("master_id"), {})
+    master_name = master.get("name") or master.get("title") or "Любой"
+
+    if status == "confirmed":
+        header = "✅ *Запись подтверждена!*"
+        footer = "До встречи! Напоминание прилетит заранее."
+    else:
+        header = "🕓 *Заявка в обработке*"
+        footer = "Мы подтвердим запись и пришлём напоминания заранее."
+
     txt = (
-        "✅ *Запись подтверждена!*\n\n"
+        f"{header}\n\n"
         f"*Услуга:* {svc.get('name', 'Услуга')}\n"
-        f"*Мастер:* { (ctx.user_data.get('masters', {}).get(ctx.user_data.get('master_id'), {}).get('name')) or 'Любой'}\n"
+        f"*Мастер:* {master_name}\n"
         f"*Дата и время:* {when}\n"
         f"*Адрес:* {address}\n\n"
-        "До встречи! Напоминание прилетит заранее."
+        f"{footer}"
     )
     update.message.reply_text(txt, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
+
+    try:
+        bid = booking.get("id") or created.get("id")
+        if bid:
+            notify_register_chat(str(bid), update.effective_chat.id)
+    except Exception as e:
+        log.debug("register chat failed: %s", e)
+
     return ConversationHandler.END
 
 # ===== safe media helpers =====
@@ -980,16 +1013,17 @@ def btn(update, ctx: CallbackContext):
         methods = format_payment_methods(s.get("paymentInfo") or s.get("paymentMethods"))
         pay = render_bot_text(
             "pay",
-            "💳 *Оплата*
-
-{methods}
-
-_Депозит фиксирует слот и вычитается из стоимости сеанса._",
+            (
+                "💳 *Оплата*\n\n"
+                "{methods}\n\n"
+                "_Депозит фиксирует слот и вычитается из стоимости сеанса._"
+            ),
             {
                 "methods": methods,
                 "studio": s.get("studioName") or "Студия",
             },
         )
+
         cover = bot_image("pay")
         if cover:
             safe_send_photo(
