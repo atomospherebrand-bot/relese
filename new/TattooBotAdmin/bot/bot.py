@@ -52,6 +52,33 @@ def send_photo_safe(target, url_or_path, caption, kb):
 _MESSAGES_CACHE = {"ts": 0, "data": {}}
 _CERTS_CACHE = {"ts": 0, "data": []}
 
+
+def edit_or_send_new(q, text, *, parse_mode=None, reply_markup=None):
+    """Safely replace the current callback message regardless of its media type."""
+    try:
+        q.edit_message_text(
+            text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
+        return
+    except Exception as e:
+        msg = str(e).lower()
+        if "no text" not in msg and "message is not modified" not in msg:
+            raise
+
+    try:
+        q.message.delete()
+    except Exception:
+        pass
+
+    q.message.bot.send_message(
+        chat_id=q.message.chat_id,
+        text=text,
+        parse_mode=parse_mode,
+        reply_markup=reply_markup,
+    )
+
 def safe_get_messages():
     try:
         now = time.time()
@@ -462,22 +489,31 @@ def entry_book(update, ctx: CallbackContext):
     # запрет на множественные записи
     uid = q.from_user.id
     if has_future_booking_for_user(uid):
-        q.edit_message_text(
+        edit_or_send_new(
+            q,
             "У тебя уже есть активная запись. Если нужно изменить время — напиши администратору или дождись завершения визита.",
-            reply_markup=kb_back_home()
+            reply_markup=kb_back_home(),
         )
         return ConversationHandler.END
 
     services = safe_get_services()
     if not services:
-        q.edit_message_text("Нет доступных услуг. Попробуй позже.", reply_markup=kb_back_home())
+        edit_or_send_new(
+            q,
+            "Нет доступных услуг. Попробуй позже.",
+            reply_markup=kb_back_home(),
+        )
         return ConversationHandler.END
 
     ctx.user_data.clear()
     ctx.user_data["services"] = {str(s["id"]): s for s in services}
     kb = [[InlineKeyboardButton(f"{s['name']} • {money(s['price'])}", callback_data=f"svc:{s['id']}")] for s in services[:30]]
     kb.append([InlineKeyboardButton("↩️ Назад", callback_data="home")])
-    q.edit_message_text("Выбери услугу:", reply_markup=InlineKeyboardMarkup(kb))
+    edit_or_send_new(
+        q,
+        "Выбери услугу:",
+        reply_markup=InlineKeyboardMarkup(kb),
+    )
     return S_SVC
 
 def pick_service(update, ctx: CallbackContext):
@@ -499,10 +535,11 @@ def pick_service(update, ctx: CallbackContext):
     if row: rows.append(row)
     rows.append([InlineKeyboardButton("↩️ Назад", callback_data="book")])
 
-    q.edit_message_text(
+    edit_or_send_new(
+        q,
         f"Услуга: *{svc.get('name','Услуга')}*\nДлительность: {dur} мин\n\nВыбери дату:",
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=InlineKeyboardMarkup(rows)
+        reply_markup=InlineKeyboardMarkup(rows),
     )
     return S_DATE
 
@@ -534,7 +571,11 @@ def pick_date(update, ctx: CallbackContext):
         cur+=timedelta(minutes=dur)
 
     if not slots:
-        q.edit_message_text("Свободных слотов нет. Выбери другую дату.", reply_markup=kb_back_home())
+        edit_or_send_new(
+            q,
+            "Свободных слотов нет. Выбери другую дату.",
+            reply_markup=kb_back_home(),
+        )
         return S_TIME
 
     rows,row=[],[]
@@ -544,7 +585,11 @@ def pick_date(update, ctx: CallbackContext):
     if row: rows.append(row)
     rows.append([InlineKeyboardButton("↩️ Назад", callback_data=f"svc:{ctx.user_data['svc_id']}")])
 
-    q.edit_message_text("Выбери время:", reply_markup=InlineKeyboardMarkup(rows))
+    edit_or_send_new(
+        q,
+        "Выбери время:",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
     return S_TIME
 
 def pick_time(update, ctx: CallbackContext):
@@ -555,7 +600,11 @@ def pick_time(update, ctx: CallbackContext):
     # выбрать мастера (только активных)
     masters = [m for m in safe_get_masters() if m.get("isActive", True)]
     if not masters:
-        q.edit_message_text("Пока нет активных мастеров. Попробуй позже.", reply_markup=kb_back_home())
+        edit_or_send_new(
+            q,
+            "Пока нет активных мастеров. Попробуй позже.",
+            reply_markup=kb_back_home(),
+        )
         return ConversationHandler.END
 
     ctx.user_data["masters"] = {str(m["id"]): m for m in masters if m.get("id")}
@@ -565,7 +614,11 @@ def pick_time(update, ctx: CallbackContext):
         if m.get("specialization"): label += f" • {m['specialization']}"
         rows.append([InlineKeyboardButton(label, callback_data=f"m:{m['id']}")])
     rows.append([InlineKeyboardButton("↩️ Назад", callback_data=f"d:{ctx.user_data['date']}")])
-    q.edit_message_text("К кому записаться?", reply_markup=InlineKeyboardMarkup(rows))
+    edit_or_send_new(
+        q,
+        "К кому записаться?",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
     return S_MASTER
 
 def pick_master(update, ctx: CallbackContext):
@@ -573,9 +626,12 @@ def pick_master(update, ctx: CallbackContext):
     _, mid = q.data.split(":",1)
     ctx.user_data["master_id"]=mid
     # спрашиваем имя
-    q.edit_message_text(
+    edit_or_send_new(
+        q,
         "Как к тебе обращаться? Напиши имя (можно просто как тебя обычно называют).",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Назад", callback_data=f"t:{ctx.user_data['time']}")]])
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("↩️ Назад", callback_data=f"t:{ctx.user_data['time']}")]]
+        ),
     )
     return S_NAME
 
@@ -840,7 +896,11 @@ def btn(update, ctx: CallbackContext):
         masters = safe_get_masters()
         active = [m for m in masters if m.get("isActive", True)]
         if not active:
-            q.edit_message_text("Пока нет активных мастеров.", reply_markup=kb_back_home())
+            edit_or_send_new(
+                q,
+                "Пока нет активных мастеров.",
+                reply_markup=kb_back_home(),
+            )
             return
 
         from telegram.utils.helpers import escape_markdown
@@ -1002,7 +1062,7 @@ def btn(update, ctx: CallbackContext):
 
             certs_text = render_bot_text(
                 "certs",
-                "🎁 Наши подарочные сертификаты. Выбирай и дари впечатления.",
+                "📄 Наши сертификаты.",
                 {"studio": s.get("studioName") or "Студия"},
             )
             if certs_text:

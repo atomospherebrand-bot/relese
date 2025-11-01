@@ -72,7 +72,7 @@ export default function SchedulePage() {
       jpost<{ days: Record<string, DayCfg> }>(`/masters/${selectedMaster}/availability`, { update: updates, ym })
         .then((response) => {
           if (response?.days) {
-            setMap(response.days);
+            setMap((prev) => ({ ...prev, ...response.days }));
           }
         })
         .catch((e) => setErr(String(e)));
