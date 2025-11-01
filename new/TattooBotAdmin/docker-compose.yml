@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: ${PGDATABASE:-tattooadmin}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-postgres} -d ${PGDATABASE:-tattooadmin}"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  app:
+    container_name: tattoobotadmin-app-1   # твой контейнер с админкой
+    build:
+      context: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/tattooadmin
+      HOST: 0.0.0.0
+      PORT: "6050"
+      # B1: куда складываем аплоады внутри контейнера
+      UPLOAD_DIR: /app/uploads
+      # скрипт перезапуска бота при сохранении токена
+      BOT_RESTART_SCRIPT: /scripts/restart-bot.sh
+      # путь к env-файлу, куда скрипт пишет токен
+      BOT_ENV_FILE: /project/bot-config/bot.env
+      # где лежит compose-проект внутри app-контейнера (для скрипта)
+      PROJ_DIR: /project
+    user: "0:0"   # доступ к /var/run/docker.sock
+    volumes:
+      - ./:/project
+      - ./scripts:/scripts:ro
+      - ./uploads:/app/uploads       # <— ВАЖНО: том для медиа
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "6050:6050"
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: ./bot                 # в этой папке должен быть Dockerfile бота
+    image: tattoobotadmin-bot:latest
+    container_name: tatto_bot_host
+    restart: unless-stopped
+    env_file:
+      - ./bot-config/bot.env         # сюда скрипт пишет TELEGRAM_BOT_TOKEN
+    environment:
+      # бот стучится в админку по публичному IP
+      API_BASE: http://212.34.130.28:6050
+    command: ["python", "/app/bot.py"]
+    tmpfs:
+      - /app/.env
+    depends_on:
+      app:
+        condition: service_started   # чтобы API был доступен по имени
+
+volumes:
+  postgres_data:
