@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 interface Booking {
   id: string;
@@ -35,16 +35,10 @@ export function CalendarView({ bookings, onDateSelect, selectedDate }: CalendarV
 
   const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(currentMonth);
 
-  const bookingsByDate = useMemo(() => {
-    return bookings.reduce<Record<string, Booking[]>>((acc, booking) => {
-      const key = booking.date.slice(0, 10);
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(booking);
-      return acc;
-    }, {});
-  }, [bookings]);
-
-  const getBookingsForDate = (isoDate: string) => bookingsByDate[isoDate] ?? [];
+  const getBookingsForDate = (day: number) => {
+    const dateStr = `${String(day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`;
+    return bookings.filter(b => b.date === dateStr);
+  };
 
   const previousMonth = () => {
     setCurrentMonth(new Date(year, month - 1));
@@ -70,7 +64,7 @@ export function CalendarView({ bookings, onDateSelect, selectedDate }: CalendarV
             <Button variant="outline" size="icon" onClick={previousMonth} data-testid="button-prev-month">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm font-medium min-w-32 text-center capitalize">
+            <span className="text-sm font-medium min-w-32 text-center">
               {monthNames[month]} {year}
             </span>
             <Button variant="outline" size="icon" onClick={nextMonth} data-testid="button-next-month">
@@ -93,39 +87,25 @@ export function CalendarView({ bookings, onDateSelect, selectedDate }: CalendarV
           
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
-            const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-            const dayBookings = getBookingsForDate(isoDate);
-            const isSelected = selectedDate === isoDate;
-            const hasBookings = dayBookings.length > 0;
-
+            const dateStr = `${String(day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`;
+            const dayBookings = getBookingsForDate(day);
+            const isSelected = selectedDate === dateStr;
+            
             return (
               <button
                 key={day}
-                onClick={() => onDateSelect(isoDate)}
+                onClick={() => onDateSelect(dateStr)}
                 className={`
                   relative aspect-square rounded-lg p-2 text-sm font-medium
                   transition-all hover-elevate
-                  ${isSelected ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-accent'}
-                  ${hasBookings ? 'ring-1 ring-primary/40' : ''}
+                  ${isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}
+                  ${dayBookings.length > 0 ? 'ring-2 ring-primary/50' : ''}
                 `}
                 data-testid={`calendar-day-${day}`}
               >
                 <span>{day}</span>
-                {hasBookings && (
-                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-1">
-                    {dayBookings.slice(0, 3).map((booking) => (
-                      <span
-                        key={booking.id}
-                        className={`h-1.5 w-1.5 rounded-full border border-background/60 ${
-                          booking.status === "confirmed"
-                            ? "bg-emerald-500"
-                            : booking.status === "pending"
-                              ? "bg-amber-500"
-                              : "bg-destructive"
-                        }`}
-                      />
-                    ))}
-                  </span>
+                {dayBookings.length > 0 && (
+                  <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-current rounded-full" />
                 )}
               </button>
             );

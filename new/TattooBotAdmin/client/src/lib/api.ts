@@ -78,6 +78,16 @@ type PortfolioFiltersResponse = {
   styles: string[];
 };
 
+type DashboardResponse = {
+  stats: {
+    bookingsToday: number;
+    activeMasters: number;
+    revenueWeek: number;
+    averageDuration: number;
+  };
+  recentBookings: Booking[];
+};
+
 export const api = {
   async uploadFile(file: File, options?: { thumbnail?: File | null }): Promise<UploadResult> {
     const formData = new FormData();
@@ -282,8 +292,8 @@ export const api = {
     });
   },
 
-  async getDashboard(): Promise<Record<string, unknown>> {
-    return request<Record<string, unknown>>(`/dashboard`);
+  async getDashboard(): Promise<DashboardResponse> {
+    return request<DashboardResponse>(`/dashboard`);
   },
 
   async importExcel(file: File): Promise<{ imported: number; skipped: number }> {

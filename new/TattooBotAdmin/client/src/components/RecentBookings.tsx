@@ -1,7 +1,8 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, User, Clock, X } from "lucide-react";
+import { Calendar, User, Clock, MessageCircleWarning } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Booking {
   id: string;
@@ -17,14 +18,12 @@ interface Booking {
 
 interface RecentBookingsProps {
   bookings: Booking[];
-  selectedDate?: string;
-  onResetFilter?: () => void;
 }
 
 const statusColors = {
-  confirmed: "bg-green-500/10 text-green-700 dark:text-green-400",
-  pending: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
-  cancelled: "bg-red-500/10 text-red-700 dark:text-red-400",
+  confirmed: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  pending: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+  cancelled: "bg-red-500/10 text-red-400 border-red-500/30",
 };
 
 const statusLabels = {
@@ -33,116 +32,86 @@ const statusLabels = {
   cancelled: "Отменена",
 };
 
-const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
-
-const dateLabelFormatter = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "long",
-});
-
-export function RecentBookings({ bookings, selectedDate, onResetFilter }: RecentBookingsProps) {
-  const selectionLabel = selectedDate ? dateLabelFormatter.format(new Date(selectedDate)) : null;
-  const hasBookings = bookings.length > 0;
-
+export function RecentBookings({ bookings }: RecentBookingsProps) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Последние записи</CardTitle>
-        {selectionLabel && (
-          <CardDescription className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>
-              Отфильтровано по дате: <span className="font-medium text-foreground">{selectionLabel}</span>
-            </span>
-            {onResetFilter && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={onResetFilter}
-              >
-                <X className="h-3.5 w-3.5" />
-                Сбросить
-              </Button>
-            )}
-          </CardDescription>
-        )}
       </CardHeader>
       <CardContent>
-        {hasBookings ? (
-          <div className="space-y-4">
-            {bookings.map((booking) => {
-              const formattedDate = dateFormatter.format(new Date(booking.date));
-
-              return (
-                <div
-                  key={booking.id}
-                  className="flex items-center justify-between gap-4 rounded-lg border bg-card/60 p-4 shadow-sm transition-all hover:shadow-md"
-                  data-testid={`booking-item-${booking.id}`}
-                >
-                  <div className="flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium" data-testid="text-client-name">
-                        {booking.clientName}
-                      </span>
-                      {booking.clientTelegram && (
-                        <a
-                          href={`https://t.me/${booking.clientTelegram}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline"
-                        >
-                          @{booking.clientTelegram}
-                        </a>
-                      )}
-                      <span className="text-muted-foreground">→</span>
-                      <span className="text-sm text-muted-foreground">{booking.masterName}</span>
-                      {booking.masterTelegram && (
-                        <a
-                          href={`https://t.me/${booking.masterTelegram}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline"
-                        >
-                          @{booking.masterTelegram}
-                        </a>
-                      )}
+        <div className="space-y-4">
+          {bookings.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-white/5 bg-white/5 py-10 text-center text-sm text-white/60">
+              <MessageCircleWarning className="h-8 w-8 text-white/30" />
+              <div className="space-y-1">
+                <p className="font-medium text-white/80">Пока нет записей</p>
+                <p className="text-xs text-white/50">Записи появятся здесь сразу после подтверждения заявок</p>
+              </div>
+            </div>
+          ) : (
+            bookings.map((booking) => (
+              <div
+                key={booking.id}
+                className="flex flex-col gap-3 rounded-xl border border-white/5 bg-[#111620] p-4 transition hover:border-white/15 hover:bg-[#151c29] sm:flex-row sm:items-center sm:justify-between"
+                data-testid={`booking-item-${booking.id}`}
+              >
+                <div className="flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-white/40" />
+                    <span className="font-medium text-white" data-testid="text-client-name">
+                      {booking.clientName}
+                    </span>
+                    {booking.clientTelegram && (
+                      <a
+                        href={`https://t.me/${booking.clientTelegram}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary/80 hover:text-primary hover:underline"
+                      >
+                        @{booking.clientTelegram}
+                      </a>
+                    )}
+                    <span className="text-white/30">→</span>
+                    <span className="text-sm text-white/70">{booking.masterName}</span>
+                    {booking.masterTelegram && (
+                      <a
+                        href={`https://t.me/${booking.masterTelegram}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary/80 hover:text-primary hover:underline"
+                      >
+                        @{booking.masterTelegram}
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 text-xs uppercase tracking-wide text-white/40">
+                    <span className="text-white/60">{booking.service}</span>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      <span>{booking.date}</span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                      <span>{booking.service}</span>
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        <span>{formattedDate}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        <span>{booking.time}</span>
-                      </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      <span>{booking.time}</span>
                     </div>
                   </div>
-                  <Badge className={statusColors[booking.status]} data-testid={`badge-status-${booking.status}`}>
-                    {statusLabels[booking.status]}
-                  </Badge>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/10 p-8 text-center text-sm text-muted-foreground">
-            <Calendar className="h-5 w-5 text-muted-foreground" />
-            <p>Нет записей за выбранный период.</p>
-            {onResetFilter && (
-              <Button variant="outline" size="sm" onClick={onResetFilter} className="mt-2">
-                Сбросить фильтр
-              </Button>
-            )}
-          </div>
-        )}
-        <Button variant="outline" className="mt-6 w-full" data-testid="button-view-all">
+                <Badge
+                  className={cn("border px-3 py-1", statusColors[booking.status])}
+                  data-testid={`badge-status-${booking.status}`}
+                >
+                  {statusLabels[booking.status]}
+                </Badge>
+              </div>
+            ))
+          )}
+        </div>
+        <Button
+          variant="outline"
+          className="mt-6 w-full border-white/10 text-white/80 hover:bg-white/10"
+          data-testid="button-view-all"
+          disabled={bookings.length === 0}
+        >
           Показать все
         </Button>
       </CardContent>

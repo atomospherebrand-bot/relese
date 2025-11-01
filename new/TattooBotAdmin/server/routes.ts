@@ -7,10 +7,9 @@ import * as XLSX from "xlsx";
 import { getStorage } from "./storage";
 import { botManager } from "./botManager";
 function normalizeUrl(url?: string | null): string | undefined {
-  if (!url) return undefined;
+  if (url === undefined || url === null) return undefined;
   let v = String(url).trim();
-  if (!v) return "";
-  // add protocol if missing
+  if (!v) return undefined;
   if (!/^https?:\/\//i.test(v)) v = "https://" + v;
   return v;
 }
@@ -45,8 +44,8 @@ function formatDate(date: string) {
 export async function registerRoutes(app: Express): Promise<Server> {
   const api = Router();
   const storage = getStorage();
-    attachStatsRoutes(api);
-attachNotificationRoutes(api);
+  attachStatsRoutes(api);
+  attachNotificationRoutes(api);
 
   api.get(
     "/health",
@@ -66,12 +65,11 @@ attachNotificationRoutes(api);
   api.post(
     "/masters",
     asyncHandler(async (req, res) => {
-      if (req.body && typeof req.body.teletypeUrl !== 'undefined') { req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl); }
-      req.body = req.body || {};
-      req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl);
-      req.body = req.body || {};
-      req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl);
-      const payload = insertMasterSchema.parse(req.body);
+      const raw = { ...(req.body ?? {}) } as Record<string, unknown>;
+      if ("teletypeUrl" in raw) {
+        raw.teletypeUrl = normalizeUrl(raw.teletypeUrl as string | null | undefined);
+      }
+      const payload = insertMasterSchema.parse(raw);
       const master = await storage.createMaster(payload);
       res.status(201).json({ master });
     }),
@@ -80,12 +78,11 @@ attachNotificationRoutes(api);
   api.put(
     "/masters/:id",
     asyncHandler(async (req, res) => {
-      if (req.body && typeof req.body.teletypeUrl !== 'undefined') { req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl); }
-      req.body = req.body || {};
-      req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl);
-      req.body = req.body || {};
-      req.body.teletypeUrl = normalizeUrl(req.body.teletypeUrl);
-      const payload = insertMasterSchema.partial().parse(req.body);
+      const raw = { ...(req.body ?? {}) } as Record<string, unknown>;
+      if ("teletypeUrl" in raw) {
+        raw.teletypeUrl = normalizeUrl(raw.teletypeUrl as string | null | undefined);
+      }
+      const payload = insertMasterSchema.partial().parse(raw);
       const master = await storage.updateMaster(req.params.id, payload);
       if (!master) {
         return res.status(404).json({ message: "Мастер не найден" });
