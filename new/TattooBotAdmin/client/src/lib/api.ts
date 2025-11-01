@@ -60,6 +60,14 @@ function sanitizeString(value?: string | null): string | undefined {
   return trimmed.length ? trimmed : undefined;
 }
 
+function sanitizeUrl(value?: string | null): string | undefined {
+  const trimmed = sanitizeString(value);
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("/uploads/")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 function prune<T extends Record<string, unknown>>(input: T): T {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input)) {
@@ -146,6 +154,7 @@ export const api = {
       telegram: sanitizeString(payload.telegram),
       specialization: (payload.specialization ?? "").trim(),
       avatar: sanitizeString(payload.avatar),
+      teletypeUrl: sanitizeUrl(payload.teletypeUrl),
       isActive: payload.isActive ?? true,
     });
 
@@ -164,6 +173,7 @@ export const api = {
       specialization:
         payload.specialization !== undefined ? (payload.specialization ?? "").trim() : undefined,
       avatar: payload.avatar !== undefined ? sanitizeString(payload.avatar) : undefined,
+      teletypeUrl: payload.teletypeUrl !== undefined ? sanitizeUrl(payload.teletypeUrl) : undefined,
       isActive: payload.isActive,
     });
 

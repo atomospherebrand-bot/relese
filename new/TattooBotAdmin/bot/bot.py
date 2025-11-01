@@ -3,7 +3,7 @@ import io
 from datetime import datetime, timedelta, time as dtime, date
 from dateutil import tz
 from telegram import (
-    InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMediaVideo, ParseMode, InputFile
+    InlineKeyboardMarkup, InlineKeyboardButton, ParseMode, InputFile
 )
 from telegram.ext import (
     Updater, CommandHandler, CallbackQueryHandler, ConversationHandler,
@@ -50,6 +50,7 @@ def send_photo_safe(target, url_or_path, caption, kb):
 
 # ===== messages cache =====
 _MESSAGES_CACHE = {"ts": 0, "data": {}}
+_CERTS_CACHE = {"ts": 0, "data": []}
 
 def safe_get_messages():
     try:
@@ -180,6 +181,33 @@ def safe_get_settings():
     except Exception as e:
         log.warning("settings fetch failed: %s", e)
         return {}
+
+
+def safe_get_certificates():
+    try:
+        now = time.time()
+        if now - _CERTS_CACHE["ts"] < 60 and _CERTS_CACHE["data"]:
+            return _CERTS_CACHE["data"]
+        data = api_get("/api/certs") or {}
+        items = data.get("certs", []) if isinstance(data, dict) else []
+        parsed = []
+        for item in items:
+            url = item.get("url")
+            if not url:
+                continue
+            parsed.append(
+                {
+                    "url": build_full_url(url),
+                    "type": (item.get("type") or "image").lower(),
+                    "caption": item.get("caption") or None,
+                }
+            )
+        _CERTS_CACHE["data"] = parsed
+        _CERTS_CACHE["ts"] = now
+        return parsed
+    except Exception as e:
+        log.warning("certificates fetch failed: %s", e)
+        return []
 
 def safe_get_services():
     try:
@@ -808,6 +836,7 @@ def btn(update, ctx: CallbackContext):
         return
 
     if data == "about":
+        s = safe_get_settings()
         masters = safe_get_masters()
         active = [m for m in masters if m.get("isActive", True)]
         if not active:
@@ -939,51 +968,50 @@ def btn(update, ctx: CallbackContext):
 
     if data=="certs":
         s = safe_get_settings()
-        links = [x.strip() for x in (s.get("certificates") or "").split(",") if x.strip()]
-        if links:
-            media_items = []
-            for u in links[:10]:
+        certs = safe_get_certificates()
+        if certs:
+            sent = 0
+            for cert in certs[:6]:
+                url = cert.get("url")
+                if not url:
+                    continue
+                caption = cert.get("caption")
+                media_type = cert.get("type")
                 try:
-                    fu = build_full_url(u)
-                    r = requests.get(fu, timeout=10, headers={"Authorization": f"Basic {auth_header}"})
-                    r.raise_for_status()
-                    log.debug(f"Cert: url={fu}, size={len(r.content)}, type={r.headers.get('Content-Type')}")
-                    buf = io.BytesIO(r.content)
-                    media_items.append({"url": fu, "caption": None, "type": "image", "buf": buf})
+                    if media_type == "video":
+                        safe_send_video(
+                            q.message.bot,
+                            q.message.chat_id,
+                            url,
+                            caption=caption,
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=kb_back_home() if sent == 0 else None,
+                        )
+                    else:
+                        safe_send_photo(
+                            q.message.bot,
+                            q.message.chat_id,
+                            url,
+                            caption=caption,
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=kb_back_home() if sent == 0 else None,
+                        )
+                    sent += 1
                 except Exception as e:
-                    log.debug("cert download failed: %s", e)
-            if media_items:
-                group = []
-                for m in media_items:
-                    m_buf = m.get("buf")
-                    if m_buf:
-                        group.append(InputMediaPhoto(media=InputFile(m_buf, filename="cert.png")))
-                try:
-                    q.message.bot.send_media_group(chat_id=q.message.chat_id, media=group)
-                except Exception as e:
-                    log.debug("certs media group failed: %s", e)
-                    for g in group:
-                        try:
-                            q.message.bot.send_photo(chat_id=q.message.chat_id, photo=g.media)
-                        except Exception as ie:
-                            log.warning(f"cert individual failed: {ie}")
+                    log.warning("send cert media failed: %s", e)
+
             certs_text = render_bot_text(
                 "certs",
                 "🎁 Наши подарочные сертификаты. Выбирай и дари впечатления.",
                 {"studio": s.get("studioName") or "Студия"},
             )
-            certs_cover = bot_image("certs")
-            if certs_cover:
-                safe_send_photo(
-                    q.message.bot,
-                    q.message.chat_id,
-                    build_full_url(certs_cover),
-                    caption=certs_text,
+            if certs_text:
+                q.message.bot.send_message(
+                    chat_id=q.message.chat_id,
+                    text=certs_text,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=kb_back_home(),
                 )
-            else:
-                q.message.reply_text(certs_text, parse_mode=ParseMode.MARKDOWN, reply_markup=kb_back_home())
         else:
             empty_text = render_bot_text(
                 "certs_empty",
